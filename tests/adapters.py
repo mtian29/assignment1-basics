@@ -22,8 +22,8 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 from collections import Counter
 import concurrent.futures
-
-GPT2_PRETOKENIZER_PATTERN = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+from .tokenizer import Tokenizer
+from .utils import GPT2_PRETOKENIZER_PATTERN
 
 
 def run_linear(
@@ -575,7 +575,7 @@ def get_tokenizer(
     Returns:
         A BPE tokenizer that uses the provided vocab, merges, and special tokens.
     """
-    raise NotImplementedError
+    return Tokenizer(vocab, merges, special_tokens)
 
 def _find_pretokens(text_list: list[str]):
     """
