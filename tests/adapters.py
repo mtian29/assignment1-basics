@@ -6,13 +6,14 @@
 from __future__ import annotations
 
 import os
+import pathlib
 from typing import IO, Any, BinaryIO
 from collections.abc import Iterable
 from jaxtyping import Float, Int
 
 import numpy.typing as npt
-import torch
-from torch import Tensor
+# import torch
+# from torch import Tensor
 
 import regex as re
 from typing import Iterable
@@ -769,3 +770,36 @@ def run_train_bpe(
     # vocab: {0: b'\x00', 1: b'<|endoftext|>', 257: b' t', 258: b' a', ...}
     # merges: [(b' ', b't'), (b' ', b'a')]
     return vocab, merges
+
+FIXTURES_PATH = (pathlib.Path(__file__).resolve().parent) / "fixtures"
+CURRENT_PATH = pathlib.Path(__file__).resolve().parent
+
+def run_bpe():
+    input_path = FIXTURES_PATH  / "tinystories_sample_5M.txt"
+    #input_path = CURRENT_PATH  / "../data/TinyStoriesV2-GPT4-train.txt"
+    print(input_path)
+    vocab, merges = run_train_bpe(
+        input_path=input_path,
+        vocab_size=10000,
+        special_tokens=["<|endoftext|>"],
+        progress_bar=True,
+        num_workers=10,
+    )
+    # Write vocab and merges to text files (not pickle)
+    vocab_path = CURRENT_PATH / "outputs/generated_vocab.txt"
+    with open(vocab_path, "w", encoding="utf-8") as f:
+        for k, v in vocab.items():
+            # Write key and value as int and bytes literal
+            f.write(f"{k}\t{v!r}\n")
+
+    merges_path = CURRENT_PATH / "outputs/generated_merges.txt"
+    with open(merges_path, "w", encoding="utf-8") as f:
+        for merge in merges:
+            # Write each merge as a tuple of bytes literals
+            f.write(f"{merge[0]!r} {merge[1]!r}\n")
+
+if __name__ == '__main__':
+    # python -m cProfile -o bpe.prof tests/adapters.py && snakeviz bpe.prof
+    # OR scalene tests/adapters.py
+    run_bpe() 
+    
