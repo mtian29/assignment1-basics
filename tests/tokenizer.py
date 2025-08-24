@@ -104,6 +104,7 @@ class Tokenizer:
             for chunk in text_chunks: # for each pretoken, encode it into a list of token ids
                 ids = [self.vocab['byte_to_int'][bytes([b])] for b in chunk.encode("utf-8")]
                 while len(ids)>=2: # merge the ids until no more merges are possible
+                    # alternatively, we loop over the merges and for each merge, check if it can be applied to the ids;
                     pairs = get_pairs(ids)
                     high_priority_pair = min(pairs, key=lambda pair: self.merges.get(pair, float('inf')))
                     if high_priority_pair not in self.merges:
