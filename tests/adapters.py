@@ -1,3 +1,8 @@
+
+# pylint: disable=unused-import,line-too-long
+# pyright: reportUnusedImport=false
+# flake8: noqa
+
 from __future__ import annotations
 
 import os
@@ -8,6 +13,16 @@ from jaxtyping import Float, Int
 import numpy.typing as npt
 import torch
 from torch import Tensor
+
+import regex as re
+from typing import Iterable
+from tqdm import tqdm
+import logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+from collections import Counter
+import concurrent.futures
+
+GPT2_PRETOKENIZER_PATTERN = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
 
 def run_linear(
@@ -561,6 +576,66 @@ def get_tokenizer(
     """
     raise NotImplementedError
 
+def _find_pretokens(text_list: list[str]):
+    """
+    Find the pretokens in the text.
+    Pre-tokenization and then count the frequency of each pretoken.
+
+    if you have a corpus (or chunk) like [Doc 1]<|endoftext|>[Doc
+    2], you should split on the special token <|endoftext|>, and pre-tokenize [Doc 1] and [Doc 2] separately,
+    so that no merging can occur across the document boundary. 
+    """
+    logging.info(f"Pre-tokenizing the text of length {len(text_list)}")
+    result = Counter()
+    for text in text_list:
+        pretokens = Counter(re.findall(GPT2_PRETOKENIZER_PATTERN, text))
+        result = result + pretokens # sum the two Counters by merging the counts for each key
+    return result
+
+def _read_text_file(input_path: str, num_worker: int, special_tokens: Iterable[str]):
+    """
+    Read the text file at the given path.
+    Return the text as pretoken frequency table.
+    """
+
+    # Read the input text file
+    with open(input_path, "r") as file:
+        text = file.read()
+
+    # Remove special tokens from the text (?)
+    text = re.split("|".join(special_tokens), text) # a list of strings
+    
+    logging.info("Initializing pretoken frequency table")
+    if num_worker == 1:
+        pretokens = _find_pretokens(text) # ' for' -> 237 times
+    else:
+        # count each chuck's pretoken frequency and sum them up
+        chunk_size = len(text) // num_worker
+        text_chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+        with concurrent.futures.ProcessPoolExecutor(max_workers=num_worker) as executor:
+            pretokens = executor.map(_find_pretokens, text_chunks)
+        pretokens = sum(pretokens, Counter())
+    # convert pretoken to tuple of bytes e.g. 'iron' -> (b'i', b'r', b'o', b'n')
+    gen_tuple_of_bytes = lambda pretoken: tuple([bytes([b]) for b in pretoken.encode("utf-8")])
+    pretoken_freq = {}
+    for pretoken, freq in pretokens.items():
+        pretoken_freq[gen_tuple_of_bytes(pretoken)] = freq
+    
+    return pretoken_freq
+
+
+def _update_byte_tuple(byte_tuple: Iterable[bytes], merge_loc: int):
+    """
+    Merge the byte tuple at the merge location.
+    (b' ', b't', b'h', b'e') and merge_loc = 0
+    return (b' t', b'h', b'e'), (), (b'h', b'e')
+    """
+    assert len(byte_tuple) > 1, "Cannot merge a byte tuple with length less than 2." # length should be 2
+    prefix = byte_tuple[:merge_loc] # (b' ')
+    tomerge = byte_tuple[merge_loc:merge_loc+2] # (b' ', b't')
+    suffix = byte_tuple[merge_loc+2:] # (b'h', b'e')
+    new_byte_tuple = prefix + (b"".join(tomerge),) + suffix # (b' t', b'h', b'e')
+    return new_byte_tuple, prefix, suffix # (b' t', b'h', b'e'), (), (b'h', b'e')
 
 def run_train_bpe(
     input_path: str | os.PathLike,
@@ -570,6 +645,35 @@ def run_train_bpe(
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
     """Given the path to an input corpus, run train a BPE tokenizer and
     output its vocabulary and merges.
+    
+    Here is a stylized example from Sennrich et al. [2016]. Consider a corpus consisting of the following text
+    low low low low low
+    lower lower widest widest widest
+    newest newest newest newest newest newest
+    and the vocabulary has a special token <|endoftext|>.
+    Vocabulary values.
+    We initialize our vocabulary with our special token <|endoftext|> and the 256 byte
+    Pre-tokenization For simplicity and to focus on the merge procedure, we assume in this example
+    that pretokenization simply splits on whitespace. When we pretokenize and count, we end up with the
+    frequency table.
+    {low: 5, lower: 2, widest: 3, newest: 6}
+
+    It is convenient to represent this as a dict[tuple[bytes], int], e.g. {(l,o,w): 5 …}. Note that even
+    a single byte is a bytes object in Python. There is no byte type in Python to represent a single byte,
+    just as there is no char type in Python to represent a single character.
+    Merges We first look at every successive pair of bytes and sum the frequency of the words where they
+    appear {lo: 7, ow: 7, we: 8, er: 2, wi: 3, id: 3, de: 3, es: 9, st: 9, ne: 6, ew: 6}. The pair ('es')
+    and ('st') are tied, so we take the lexicographically greater pair, ('st'). We would then merge the
+    pre-tokens so that we end up with {(l,o,w): 5, (l,o,w,e,r): 2, (w,i,d,e,st): 3, (n,e,w,e,st): 6}.
+    In the second round, we see that (e, st) is the most common pair (with a count of 9) and we would
+    merge into {(l,o,w): 5, (l,o,w,e,r): 2, (w,i,d,est): 3, (n,e,w,est): 6}. Continuing this, the
+    sequence of merges we get in the end will be ['s t', 'e st', 'o w', 'l ow', 'w est', 'n e',
+    'ne west', 'w i', 'wi d', 'wid est', 'low e', 'lowe r'].
+    If we take 6 merges, we have ['s t', 'e st', 'o w', 'l ow', 'w est', 'n e'] and our vocab-
+    ulary elements would be [<|endoftext|>, [...256 BYTE CHARS], st, est, ow, low, west, ne].
+    With this vocabulary and set of merges, the word newest would tokenize as [ne, west]. (<-- different from the pretokenization)
+
+    Without pretokenization, the above could have a token like "ow lo" in the final vocabulary.
 
     Args:
         input_path (str | os.PathLike): Path to BPE tokenizer training data.
@@ -589,4 +693,79 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
-    raise NotImplementedError
+    progress_bar = kwargs.get("progress_bar", False)
+    num_workers = kwargs.get("num_workers", 1)
+    
+    vocab = {i: bytes([i]) for i in range(256)} # 0 -> b'\x00
+    for i, token in enumerate(special_tokens):
+        vocab[256+i] = token.encode("utf-8") # 256 -> b'<|endoftext|>'
+    
+    pretoken_freq = _read_text_file(input_path, num_workers, special_tokens)
+
+    logging.info("Initializing byte pair frequency table")
+    pair_freq = Counter()
+    for pretoken_tuple, freq in tqdm(pretoken_freq.items(), disable=not progress_bar):
+        for i in range(len(pretoken_tuple) - 1): # pretoken_tuple = (b'i', b'r', b'o', b'n')
+            pair = pretoken_tuple[i:i+2] # pair = (b'i', b'r')
+            if pair not in pair_freq:
+                pair_freq[pair] = 0
+            pair_freq[pair] += freq
+
+    # (b'i', b'r', b'o', b'n') : 2 times
+    # pair_freq: Counter({(b'i', b'r'): 2, (b'r', b'o'): 2, (b'o', b'n'): 2})
+    # now we have all the byte pairs and their frequencies
+
+    logging.info("Performing BPE algorithm")
+    pre_merge_vocab_size = len(vocab)
+    pbar = tqdm(total=vocab_size-pre_merge_vocab_size) if progress_bar else None
+    merges = []
+    while len(vocab) < vocab_size: # quit after we reached the desired vocab size
+        # Find the most frequent pair, if tie, choose the lexicographically largest one
+        most_freq_pair = max(pair_freq, key=lambda k: (pair_freq[k], k)) # (b' ', b't') -> 2940 times
+
+        # Add the pair to the merges list
+        merges.append(most_freq_pair) # [(b' ', b't')]
+        
+        # Update the vocab
+        new_id = max(vocab.keys()) + 1 # 257
+        vocab[new_id] = b"".join(most_freq_pair) # vocab: 257 -> b' t'
+
+        # Update the pre-token frequency table pretoken_freq (pretoken_tuple -> times) and pair frequency table pair_freq (pair -> times)
+        # need pair_freq to find the max pair; need pretoken_freq's key to merge the tuple after finding the max pair
+        # {lo: 7, ow: 7, we: 8, er: 2, wi: 3, id: 3, de: 3, es: 9, st: 9, ne: 6, ew: 6} this is pair_freq
+        # {(l,o,w): 5, (l,o,w,e,r): 2, (w,i,d,est): 3, (n,e,w,est): 6} this is pretoken_freq
+        new_pretoken_freq = {}
+        for pretoken_tuple, freq in pretoken_freq.items(): # (b' ', b't', b'h', b'e') : 1279 times
+            i=0
+            while i < len(pretoken_tuple):
+                pair = pretoken_tuple[i:i+2] # pair = (b' ', b't')
+                if pair == most_freq_pair:
+                    # pretoken_tuple = (b' ', b't', b'h', b'e'), i = 0; pair = (b' ', b't');
+                    # prefix
+                    pretoken_tuple, prefix, suffix = _update_byte_tuple(pretoken_tuple, i)
+                    # pretoken_tuple = (b' t', b'h', b'e') <-- this is the new merged tuple, prefix = (), suffix = (b'h', b'e')
+
+                    # Update the pair frequency table; https://github.com/marta1994/efficient_bpe_explanation
+                    # for the new merged ' t'; we form new pairs with the prefix and suffix (add_pair)
+                    # update the pair frequency table for the new pairs (add_pair (b' t', b'h')) and delete the old pair (del_pair)  (b't', b'h')
+                    if prefix:
+                        add_pair = (prefix[-1], vocab[new_id])
+                        pair_freq[add_pair] = pair_freq.get(add_pair, 0) + freq
+                        del_pair = (prefix[-1], most_freq_pair[0])
+                        pair_freq[del_pair] -= freq
+                    if suffix:
+                        add_pair = (vocab[new_id], suffix[0]) # (b' t', b'h')
+                        pair_freq[add_pair] = pair_freq.get(add_pair, 0) + freq # (b' t', b'h') : 1279 times
+                        del_pair = (most_freq_pair[1], suffix[0]) # (b't', b'h'), this pair is deleted; 
+                        pair_freq[del_pair] -= freq # cannot set it to 0, should minus the frequency; because ' th' is gone but 'xth' is still there
+                    pair_freq[most_freq_pair] -= freq
+                i+=1
+            # Update the pre-token frequency table; pretoken_tuple = (b' t', b'h', b'e')
+            new_pretoken_freq[pretoken_tuple] = freq
+        pretoken_freq = new_pretoken_freq
+        pbar.update(len(vocab) - pre_merge_vocab_size - pbar.n) if progress_bar else None
+    pbar.close() if progress_bar else None
+
+    # vocab: {0: b'\x00', 1: b'<|endoftext|>', 257: b' t', 258: b' a', ...}
+    # merges: [(b' ', b't'), (b' ', b'a')]
+    return vocab, merges
