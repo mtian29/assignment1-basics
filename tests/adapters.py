@@ -702,6 +702,7 @@ def run_train_bpe(
         vocab[256+i] = token.encode("utf-8") # 256 -> b'<|endoftext|>'
     
     pretoken_freq = _read_text_file(input_path, num_workers, special_tokens)
+    # (b'i', b'r', b'o', b'n') -> 2 times
 
     logging.info("Initializing byte pair frequency table")
     pair_freq = Counter()
@@ -712,7 +713,7 @@ def run_train_bpe(
                 pair_freq[pair] = 0
             pair_freq[pair] += freq
 
-    # (b'i', b'r', b'o', b'n') : 2 times
+    # pretoken_freq: (b'i', b'r', b'o', b'n') : 2 times
     # pair_freq: Counter({(b'i', b'r'): 2, (b'r', b'o'): 2, (b'o', b'n'): 2})
     # now we have all the byte pairs and their frequencies
 
@@ -722,6 +723,7 @@ def run_train_bpe(
     merges = []
     while len(vocab) < vocab_size: # quit after we reached the desired vocab size
         # Find the most frequent pair, if tie, choose the lexicographically largest one
+        # (OR use a max_heap to find the most frequent pair)
         most_freq_pair = max(pair_freq, key=lambda k: (pair_freq[k], k)) # (b' ', b't') -> 2940 times
 
         # Add the pair to the merges list
