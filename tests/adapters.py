@@ -12,8 +12,8 @@ from collections.abc import Iterable
 from jaxtyping import Float, Int
 
 import numpy.typing as npt
-# import torch
-# from torch import Tensor
+import torch
+from torch import Tensor
 
 import regex as re
 from typing import Iterable
@@ -24,7 +24,8 @@ from collections import Counter
 import concurrent.futures
 from .tokenizer import Tokenizer
 from .utils import GPT2_PRETOKENIZER_PATTERN
-
+from cs336_basics.linear import Linear
+import torch.nn as nn
 
 def run_linear(
     d_in: int,
@@ -45,7 +46,9 @@ def run_linear(
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
 
-    raise NotImplementedError
+    layer = Linear(d_in, d_out)
+    layer.weight = nn.Parameter(weights)
+    return layer(in_features)
 
 
 def run_embedding(
