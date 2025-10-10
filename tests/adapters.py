@@ -1,4 +1,3 @@
-
 # pylint: disable=unused-import,line-too-long
 # pyright: reportUnusedImport=false
 # flake8: noqa
@@ -19,13 +18,18 @@ import regex as re
 from typing import Iterable
 from tqdm import tqdm
 import logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 from collections import Counter
 import concurrent.futures
 from .tokenizer import Tokenizer
 from .utils import GPT2_PRETOKENIZER_PATTERN
 from cs336_basics.linear import Linear
 import torch.nn as nn
+from cs336_basics.embedding import Embedding
+
 
 def run_linear(
     d_in: int,
@@ -69,8 +73,9 @@ def run_embedding(
     Returns:
         Float[Tensor, "... d_model"]: Batch of embeddings returned by your Embedding layer.
     """
-
-    raise NotImplementedError
+    embedding = Embedding(vocab_size, d_model)
+    embedding.embedding_matrix = nn.Parameter(weights)
+    return embedding(token_ids)
 
 
 def run_swiglu(
@@ -471,7 +476,9 @@ def run_cross_entropy(
     raise NotImplementedError
 
 
-def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
+def run_gradient_clipping(
+    parameters: Iterable[torch.nn.Parameter], max_l2_norm: float
+) -> None:
     """Given a set of parameters, clip their combined gradients to have l2 norm at most max_l2_norm.
 
     Args:
@@ -580,6 +587,7 @@ def get_tokenizer(
     """
     return Tokenizer(vocab, merges, special_tokens)
 
+
 def _find_pretokens(text_list: list[str]):
     """
     Find the pretokens in the text.
@@ -587,14 +595,17 @@ def _find_pretokens(text_list: list[str]):
 
     if you have a corpus (or chunk) like [Doc 1]<|endoftext|>[Doc
     2], you should split on the special token <|endoftext|>, and pre-tokenize [Doc 1] and [Doc 2] separately,
-    so that no merging can occur across the document boundary. 
+    so that no merging can occur across the document boundary.
     """
     logging.info(f"Pre-tokenizing the text of length {len(text_list)}")
     result = Counter()
     for text in text_list:
         pretokens = Counter(re.findall(GPT2_PRETOKENIZER_PATTERN, text))
-        result = result + pretokens # sum the two Counters by merging the counts for each key
+        result = (
+            result + pretokens
+        )  # sum the two Counters by merging the counts for each key
     return result
+
 
 def _read_text_file(input_path: str, num_worker: int, special_tokens: Iterable[str]):
     """
@@ -607,24 +618,28 @@ def _read_text_file(input_path: str, num_worker: int, special_tokens: Iterable[s
         text = file.read()
 
     # Remove special tokens from the text (?)
-    text = re.split("|".join(special_tokens), text) # a list of strings
-    
+    text = re.split("|".join(special_tokens), text)  # a list of strings
+
     logging.info("Initializing pretoken frequency table")
     if num_worker == 1:
-        pretokens = _find_pretokens(text) # ' for' -> 237 times
+        pretokens = _find_pretokens(text)  # ' for' -> 237 times
     else:
         # count each chuck's pretoken frequency and sum them up
         chunk_size = len(text) // num_worker
-        text_chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+        text_chunks = [
+            text[i : i + chunk_size] for i in range(0, len(text), chunk_size)
+        ]
         with concurrent.futures.ProcessPoolExecutor(max_workers=num_worker) as executor:
             pretokens = executor.map(_find_pretokens, text_chunks)
         pretokens = sum(pretokens, Counter())
     # convert pretoken to tuple of bytes e.g. 'iron' -> (b'i', b'r', b'o', b'n')
-    gen_tuple_of_bytes = lambda pretoken: tuple([bytes([b]) for b in pretoken.encode("utf-8")])
+    gen_tuple_of_bytes = lambda pretoken: tuple(
+        [bytes([b]) for b in pretoken.encode("utf-8")]
+    )
     pretoken_freq = {}
     for pretoken, freq in pretokens.items():
         pretoken_freq[gen_tuple_of_bytes(pretoken)] = freq
-    
+
     return pretoken_freq
 
 
@@ -634,12 +649,15 @@ def _update_byte_tuple(byte_tuple: Iterable[bytes], merge_loc: int):
     (b' ', b't', b'h', b'e') and merge_loc = 0
     return (b' t', b'h', b'e'), (), (b'h', b'e')
     """
-    assert len(byte_tuple) > 1, "Cannot merge a byte tuple with length less than 2." # length should be 2
-    prefix = byte_tuple[:merge_loc] # (b' ')
-    tomerge = byte_tuple[merge_loc:merge_loc+2] # (b' ', b't')
-    suffix = byte_tuple[merge_loc+2:] # (b'h', b'e')
-    new_byte_tuple = prefix + (b"".join(tomerge),) + suffix # (b' t', b'h', b'e')
-    return new_byte_tuple, prefix, suffix # (b' t', b'h', b'e'), (), (b'h', b'e')
+    assert (
+        len(byte_tuple) > 1
+    ), "Cannot merge a byte tuple with length less than 2."  # length should be 2
+    prefix = byte_tuple[:merge_loc]  # (b' ')
+    tomerge = byte_tuple[merge_loc : merge_loc + 2]  # (b' ', b't')
+    suffix = byte_tuple[merge_loc + 2 :]  # (b'h', b'e')
+    new_byte_tuple = prefix + (b"".join(tomerge),) + suffix  # (b' t', b'h', b'e')
+    return new_byte_tuple, prefix, suffix  # (b' t', b'h', b'e'), (), (b'h', b'e')
+
 
 def run_train_bpe(
     input_path: str | os.PathLike,
@@ -649,7 +667,7 @@ def run_train_bpe(
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
     """Given the path to an input corpus, run train a BPE tokenizer and
     output its vocabulary and merges.
-    
+
     Here is a stylized example from Sennrich et al. [2016]. Consider a corpus consisting of the following text
     low low low low low
     lower lower widest widest widest
@@ -699,19 +717,21 @@ def run_train_bpe(
     """
     progress_bar = kwargs.get("progress_bar", False)
     num_workers = kwargs.get("num_workers", 1)
-    
-    vocab = {i: bytes([i]) for i in range(256)} # 0 -> b'\x00
+
+    vocab = {i: bytes([i]) for i in range(256)}  # 0 -> b'\x00
     for i, token in enumerate(special_tokens):
-        vocab[256+i] = token.encode("utf-8") # 256 -> b'<|endoftext|>'
-    
+        vocab[256 + i] = token.encode("utf-8")  # 256 -> b'<|endoftext|>'
+
     pretoken_freq = _read_text_file(input_path, num_workers, special_tokens)
     # (b'i', b'r', b'o', b'n') -> 2 times
 
     logging.info("Initializing byte pair frequency table")
     pair_freq = Counter()
     for pretoken_tuple, freq in tqdm(pretoken_freq.items(), disable=not progress_bar):
-        for i in range(len(pretoken_tuple) - 1): # pretoken_tuple = (b'i', b'r', b'o', b'n')
-            pair = pretoken_tuple[i:i+2] # pair = (b'i', b'r')
+        for i in range(
+            len(pretoken_tuple) - 1
+        ):  # pretoken_tuple = (b'i', b'r', b'o', b'n')
+            pair = pretoken_tuple[i : i + 2]  # pair = (b'i', b'r')
             if pair not in pair_freq:
                 pair_freq[pair] = 0
             pair_freq[pair] += freq
@@ -722,33 +742,40 @@ def run_train_bpe(
 
     logging.info("Performing BPE algorithm")
     pre_merge_vocab_size = len(vocab)
-    pbar = tqdm(total=vocab_size-pre_merge_vocab_size) if progress_bar else None
+    pbar = tqdm(total=vocab_size - pre_merge_vocab_size) if progress_bar else None
     merges = []
-    while len(vocab) < vocab_size: # quit after we reached the desired vocab size
+    while len(vocab) < vocab_size:  # quit after we reached the desired vocab size
         # Find the most frequent pair, if tie, choose the lexicographically largest one
         # (OR use a max_heap to find the most frequent pair)
-        most_freq_pair = max(pair_freq, key=lambda k: (pair_freq[k], k)) # (b' ', b't') -> 2940 times
+        most_freq_pair = max(
+            pair_freq, key=lambda k: (pair_freq[k], k)
+        )  # (b' ', b't') -> 2940 times
 
         # Add the pair to the merges list
-        merges.append(most_freq_pair) # [(b' ', b't')]
-        
+        merges.append(most_freq_pair)  # [(b' ', b't')]
+
         # Update the vocab
-        new_id = max(vocab.keys()) + 1 # 257
-        vocab[new_id] = b"".join(most_freq_pair) # vocab: 257 -> b' t'
+        new_id = max(vocab.keys()) + 1  # 257
+        vocab[new_id] = b"".join(most_freq_pair)  # vocab: 257 -> b' t'
 
         # Update the pre-token frequency table pretoken_freq (pretoken_tuple -> times) and pair frequency table pair_freq (pair -> times)
         # need pair_freq to find the max pair; need pretoken_freq's key to merge the tuple after finding the max pair
         # {lo: 7, ow: 7, we: 8, er: 2, wi: 3, id: 3, de: 3, es: 9, st: 9, ne: 6, ew: 6} this is pair_freq
         # {(l,o,w): 5, (l,o,w,e,r): 2, (w,i,d,est): 3, (n,e,w,est): 6} this is pretoken_freq
         new_pretoken_freq = {}
-        for pretoken_tuple, freq in pretoken_freq.items(): # (b' ', b't', b'h', b'e') : 1279 times
-            i=0
+        for (
+            pretoken_tuple,
+            freq,
+        ) in pretoken_freq.items():  # (b' ', b't', b'h', b'e') : 1279 times
+            i = 0
             while i < len(pretoken_tuple):
-                pair = pretoken_tuple[i:i+2] # pair = (b' ', b't')
+                pair = pretoken_tuple[i : i + 2]  # pair = (b' ', b't')
                 if pair == most_freq_pair:
                     # pretoken_tuple = (b' ', b't', b'h', b'e'), i = 0; pair = (b' ', b't');
                     # prefix
-                    pretoken_tuple, prefix, suffix = _update_byte_tuple(pretoken_tuple, i)
+                    pretoken_tuple, prefix, suffix = _update_byte_tuple(
+                        pretoken_tuple, i
+                    )
                     # pretoken_tuple = (b' t', b'h', b'e') <-- this is the new merged tuple, prefix = (), suffix = (b'h', b'e')
 
                     # Update the pair frequency table; https://github.com/marta1994/efficient_bpe_explanation
@@ -760,28 +787,41 @@ def run_train_bpe(
                         del_pair = (prefix[-1], most_freq_pair[0])
                         pair_freq[del_pair] -= freq
                     if suffix:
-                        add_pair = (vocab[new_id], suffix[0]) # (b' t', b'h')
-                        pair_freq[add_pair] = pair_freq.get(add_pair, 0) + freq # (b' t', b'h') : 1279 times
-                        del_pair = (most_freq_pair[1], suffix[0]) # (b't', b'h'), this pair is deleted; 
-                        pair_freq[del_pair] -= freq # cannot set it to 0, should minus the frequency; because ' th' is gone but 'xth' is still there
+                        add_pair = (vocab[new_id], suffix[0])  # (b' t', b'h')
+                        pair_freq[add_pair] = (
+                            pair_freq.get(add_pair, 0) + freq
+                        )  # (b' t', b'h') : 1279 times
+                        del_pair = (
+                            most_freq_pair[1],
+                            suffix[0],
+                        )  # (b't', b'h'), this pair is deleted;
+                        pair_freq[
+                            del_pair
+                        ] -= freq  # cannot set it to 0, should minus the frequency; because ' th' is gone but 'xth' is still there
                     pair_freq[most_freq_pair] -= freq
-                i+=1
+                i += 1
             # Update the pre-token frequency table; pretoken_tuple = (b' t', b'h', b'e')
             new_pretoken_freq[pretoken_tuple] = freq
         pretoken_freq = new_pretoken_freq
-        pbar.update(len(vocab) - pre_merge_vocab_size - pbar.n) if progress_bar else None
+        (
+            pbar.update(len(vocab) - pre_merge_vocab_size - pbar.n)
+            if progress_bar
+            else None
+        )
     pbar.close() if progress_bar else None
 
     # vocab: {0: b'\x00', 1: b'<|endoftext|>', 257: b' t', 258: b' a', ...}
     # merges: [(b' ', b't'), (b' ', b'a')]
     return vocab, merges
 
+
 FIXTURES_PATH = (pathlib.Path(__file__).resolve().parent) / "fixtures"
 CURRENT_PATH = pathlib.Path(__file__).resolve().parent
 
+
 def run_bpe():
-    input_path = FIXTURES_PATH  / "tinystories_sample_5M.txt"
-    #input_path = CURRENT_PATH  / "../data/TinyStoriesV2-GPT4-train.txt"
+    input_path = FIXTURES_PATH / "tinystories_sample_5M.txt"
+    # input_path = CURRENT_PATH  / "../data/TinyStoriesV2-GPT4-train.txt"
     print(input_path)
     vocab, merges = run_train_bpe(
         input_path=input_path,
@@ -803,8 +843,8 @@ def run_bpe():
             # Write each merge as a tuple of bytes literals
             f.write(f"{merge[0]!r} {merge[1]!r}\n")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     # python -m cProfile -o bpe.prof tests/adapters.py && snakeviz bpe.prof
     # OR scalene tests/adapters.py
-    run_bpe() 
-    
+    run_bpe()

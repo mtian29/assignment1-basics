@@ -8,19 +8,21 @@ from tqdm import tqdm
 
 from .utils import GPT2_PRETOKENIZER_PATTERN
 
+
 def get_pairs(ids: Iterable[int]) -> Iterable[Tuple[int, int]]:
-    """ Return a set of pairs in int ids """
+    """Return a set of pairs in int ids"""
     pairs = set()
     for pair in zip(ids, ids[1:]):
         pairs.add(pair)
     return pairs
 
+
 def update(ids: List[int], pair: Tuple[int, int], new_id: int) -> List[int]:
-    """ Update the ids by merging the pairs """
+    """Update the ids by merging the pairs"""
     new_ids = []
     i = 0
     while i < len(ids):
-        curr_pair = tuple(ids[i:i+2])
+        curr_pair = tuple(ids[i : i + 2])
         if curr_pair == pair:
             new_ids.append(new_id)
             i += 1
@@ -29,8 +31,9 @@ def update(ids: List[int], pair: Tuple[int, int], new_id: int) -> List[int]:
         i += 1
     return new_ids
 
+
 def _fix_vocab(vocab_i_to_b: Dict[int, bytes], vocab_b_to_i: Dict[str, bytes]):
-    """ Make sure all bytes are in the vocab """
+    """Make sure all bytes are in the vocab"""
     for i in range(256):
         byte = bytes([i])
         if byte not in vocab_b_to_i:
@@ -38,33 +41,43 @@ def _fix_vocab(vocab_i_to_b: Dict[int, bytes], vocab_b_to_i: Dict[str, bytes]):
             vocab_i_to_b[len(vocab_i_to_b)] = byte
     return dict(int_to_byte=vocab_i_to_b, byte_to_int=vocab_b_to_i)
 
+
 class Tokenizer:
-    def __init__(self, vocab: Dict[int, bytes], merges: Iterable[Tuple[bytes, bytes]], special_tokens: Iterable[str]=None):
+    def __init__(
+        self,
+        vocab: Dict[int, bytes],
+        merges: Iterable[Tuple[bytes, bytes]],
+        special_tokens: Iterable[str] = None,
+    ):
         self.vocab = {}
-        self.vocab['int_to_byte'] = vocab
-        self.vocab['byte_to_int'] = {v: k for k, v in vocab.items()}
-        self.vocab = _fix_vocab(self.vocab['int_to_byte'], self.vocab['byte_to_int'])
+        self.vocab["int_to_byte"] = vocab
+        self.vocab["byte_to_int"] = {v: k for k, v in vocab.items()}
+        self.vocab = _fix_vocab(self.vocab["int_to_byte"], self.vocab["byte_to_int"])
 
         # reorganzie merges into pair -> new token id dict
         # because we want to know if a pair is in a merges quickly. The value is the new token id; The lower the new token id, the more frequent the pair is.
         self.merges = {}
         for a, b in merges:
-            id_pair = (self.vocab['byte_to_int'][a], self.vocab['byte_to_int'][b])
-            self.merges[id_pair] = self.vocab['byte_to_int'][a+b]
-        
+            id_pair = (self.vocab["byte_to_int"][a], self.vocab["byte_to_int"][b])
+            self.merges[id_pair] = self.vocab["byte_to_int"][a + b]
+
         # add special tokens as string to id mapping
         self.special_tokens = {}
         if special_tokens:
             special_tokens = sorted(special_tokens, key=len, reverse=True)
             for token in special_tokens:
                 token_byte = token.encode("utf-8")
-                if token_byte not in self.vocab['byte_to_int']:
-                    self.vocab['byte_to_int'][token_byte] = len(self.vocab['byte_to_int'])
-                    self.vocab['int_to_byte'][len(self.vocab['int_to_byte'])] = token_byte
-                    self.special_tokens[token] = len(self.vocab['int_to_byte'])
+                if token_byte not in self.vocab["byte_to_int"]:
+                    self.vocab["byte_to_int"][token_byte] = len(
+                        self.vocab["byte_to_int"]
+                    )
+                    self.vocab["int_to_byte"][
+                        len(self.vocab["int_to_byte"])
+                    ] = token_byte
+                    self.special_tokens[token] = len(self.vocab["int_to_byte"])
                 else:
-                    self.special_tokens[token] = self.vocab['byte_to_int'][token_byte]
-    
+                    self.special_tokens[token] = self.vocab["byte_to_int"][token_byte]
+
     @classmethod
     def from_files(cls, vocab_filepath, merges_filepath, special_tokens=None, **kwargs):
         # vocab, merges = get_tokenizer_from_vocab_merges_path(vocab_filepath, merges_filepath)
@@ -73,8 +86,8 @@ class Tokenizer:
 
     @property
     def vocab_size(self):
-        return len(self.vocab['int_to_byte'])
-    
+        return len(self.vocab["int_to_byte"])
+
     def _encode_chunk(self, text: str) -> List[int]:
         """
         Encode the text without special tokens.
@@ -100,44 +113,64 @@ class Tokenizer:
         if text in self.special_tokens:
             return [self.special_tokens[text]]
         else:
-            text_chunks = re.findall(GPT2_PRETOKENIZER_PATTERN, text) # a list of pretokens
+            text_chunks = re.findall(
+                GPT2_PRETOKENIZER_PATTERN, text
+            )  # a list of pretokens
             # 'Hello, how are you?' => ['Hello', ',', ' how', ' are', ' you', '?']
             result = []
-            for chunk in text_chunks: # for each pretoken, encode it into a list of token ids
-                ids = [self.vocab['byte_to_int'][bytes([b])] for b in chunk.encode("utf-8")]
-                # Hello => [b'H', b'e', b'l', b'l', b'o'] => maps to self.vocab to get id; 
+            for (
+                chunk
+            ) in text_chunks:  # for each pretoken, encode it into a list of token ids
+                ids = [
+                    self.vocab["byte_to_int"][bytes([b])] for b in chunk.encode("utf-8")
+                ]
+                # Hello => [b'H', b'e', b'l', b'l', b'o'] => maps to self.vocab to get id;
                 # self.vocab['byte_to_int'][b'H'] is 39. So ids =[39, 68, 75, 75, 78]
-                while len(ids)>=2: # merge the ids until no more merges are possible
+                while len(ids) >= 2:  # merge the ids until no more merges are possible
                     # alternatively, we loop over the merges and for each merge, check if it can be applied to the ids;
-                    pairs = get_pairs(ids) # {(39, 68), (75, 78), (75, 75), (68, 75)}
+                    pairs = get_pairs(ids)  # {(39, 68), (75, 78), (75, 75), (68, 75)}
                     # merges is (PAIR: new_id) e.g. (75, 75) = 297
                     # find the pair in pairs array that has the lowest new_id in merges; We should merge the pair with the lowest new_id first
                     # (75, 75) has lowest new_id = 297; so we merge (75, 75) first because lower new_id means it is more frequent
-                    high_priority_pair = min(pairs, key=lambda pair: self.merges.get(pair, float('inf'))) # (75, 75)
-                    if high_priority_pair not in self.merges: # no pairs is in the merges. We cannot merge further, quit;
+                    high_priority_pair = min(
+                        pairs, key=lambda pair: self.merges.get(pair, float("inf"))
+                    )  # (75, 75)
+                    if (
+                        high_priority_pair not in self.merges
+                    ):  # no pairs is in the merges. We cannot merge further, quit;
                         break
-                    new_id = self.merges[high_priority_pair] # 297, because (75, 75) = 297 in merges
-                    ids = update(ids, high_priority_pair, new_id) # merge (75, 75) into 297, ids = [39, 68, 297, 78]
-                result.extend(ids) # after multiple merges, ids = [15496], this the final encoding for the pretoken 'Hello'
-            return result # [15496, 11, 703, 389, 345, 30]. 15496 is Hello's final encoding
+                    new_id = self.merges[
+                        high_priority_pair
+                    ]  # 297, because (75, 75) = 297 in merges
+                    ids = update(
+                        ids, high_priority_pair, new_id
+                    )  # merge (75, 75) into 297, ids = [39, 68, 297, 78]
+                result.extend(
+                    ids
+                )  # after multiple merges, ids = [15496], this the final encoding for the pretoken 'Hello'
+            return result  # [15496, 11, 703, 389, 345, 30]. 15496 is Hello's final encoding
 
-
-    def encode(self, text: str, progress_bar: bool=False) -> List[int]:
+    def encode(self, text: str, progress_bar: bool = False) -> List[int]:
         """
         Encode the text into a list of token ids.
         split the text into chunks and encode each chunk separately
         """
         if self.special_tokens:
-            special_pattern = "(" + "|".join(re.escape(k) for k in self.special_tokens) + ")"
+            special_pattern = (
+                "(" + "|".join(re.escape(k) for k in self.special_tokens) + ")"
+            )
             special_split_chunk = re.split(special_pattern, text)
         else:
             special_split_chunk = [text]
         ids = []
-        for chunk in tqdm(special_split_chunk, disable=not progress_bar,
-                          desc=f"Encoding {len(special_split_chunk)} documents"):
+        for chunk in tqdm(
+            special_split_chunk,
+            disable=not progress_bar,
+            desc=f"Encoding {len(special_split_chunk)} documents",
+        ):
             ids += self._encode_chunk(chunk)
         return ids
-    
+
     def encode_iterable(self, texts: Iterable[str]) -> Iterable[List[int]]:
         """
         Encode the texts into a list of token ids.
@@ -151,6 +184,6 @@ class Tokenizer:
         """
         Decode the token ids into the original text.
         """
-        text_bytes = b''.join([self.vocab['int_to_byte'][i] for i in ids])
+        text_bytes = b"".join([self.vocab["int_to_byte"][i] for i in ids])
         # errors='replace' will automatically replace malformed data with the replacement marker.
         return text_bytes.decode("utf-8", errors="replace")
