@@ -59,7 +59,8 @@ def get_tokenizer_from_vocab_merges_path(
         gpt2_vocab_index: bytes([gpt2_byte_decoder[token] for token in gpt2_vocab_item])
         for gpt2_vocab_item, gpt2_vocab_index in gpt2_vocab.items()
     }
-    # If any of the special tokens don't exist in the vocab, append them to the vocab.
+    # If any of the special tokens don't exist in the vocab, append them to
+    # the vocab.
     if special_tokens:
         for special_token in special_tokens:
             byte_encoded_special_token = special_token.encode("utf-8")
@@ -259,7 +260,8 @@ def test_overlapping_special_tokens():
 
     ids = tokenizer.encode(test_string)
     tokenized_string = [tokenizer.decode([x]) for x in ids]
-    # Ensure the double <|endoftext|><|endoftext|> is preserved as a single token
+    # Ensure the double <|endoftext|><|endoftext|> is preserved as a single
+    # token
     assert tokenized_string.count("<|endoftext|>") == 1
     assert tokenized_string.count("<|endoftext|><|endoftext|>") == 1
     # Test roundtrip

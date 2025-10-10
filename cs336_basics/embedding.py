@@ -34,5 +34,6 @@ class Embedding(nn.Module):
         # print(token_ids.shape) # torch.Size([4, 12])
         # print(token_ids)
         # print(self.embedding_matrix[token_ids].shape) # torch.Size([4, 12, 64])
-        # batch size is 4, sequence length is 12, embedding dimension is 64, vocab size is 10000
+        # batch size is 4, sequence length is 12, embedding dimension is 64,
+        # vocab size is 10000
         return self.embedding_matrix[token_ids]

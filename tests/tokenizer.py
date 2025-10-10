@@ -55,7 +55,9 @@ class Tokenizer:
         self.vocab = _fix_vocab(self.vocab["int_to_byte"], self.vocab["byte_to_int"])
 
         # reorganzie merges into pair -> new token id dict
-        # because we want to know if a pair is in a merges quickly. The value is the new token id; The lower the new token id, the more frequent the pair is.
+        # because we want to know if a pair is in a merges quickly. The value
+        # is the new token id; The lower the new token id, the more frequent
+        # the pair is.
         self.merges = {}
         for a, b in merges:
             id_pair = (self.vocab["byte_to_int"][a], self.vocab["byte_to_int"][b])
@@ -125,19 +127,21 @@ class Tokenizer:
                     self.vocab["byte_to_int"][bytes([b])] for b in chunk.encode("utf-8")
                 ]
                 # Hello => [b'H', b'e', b'l', b'l', b'o'] => maps to self.vocab to get id;
-                # self.vocab['byte_to_int'][b'H'] is 39. So ids =[39, 68, 75, 75, 78]
+                # self.vocab['byte_to_int'][b'H'] is 39. So ids =[39, 68, 75,
+                # 75, 78]
                 while len(ids) >= 2:  # merge the ids until no more merges are possible
-                    # alternatively, we loop over the merges and for each merge, check if it can be applied to the ids;
-                    pairs = get_pairs(ids)  # {(39, 68), (75, 78), (75, 75), (68, 75)}
+                    # alternatively, we loop over the merges and for each
+                    # merge, check if it can be applied to the ids;
+                    # {(39, 68), (75, 78), (75, 75), (68, 75)}
+                    pairs = get_pairs(ids)
                     # merges is (PAIR: new_id) e.g. (75, 75) = 297
                     # find the pair in pairs array that has the lowest new_id in merges; We should merge the pair with the lowest new_id first
                     # (75, 75) has lowest new_id = 297; so we merge (75, 75) first because lower new_id means it is more frequent
                     high_priority_pair = min(
                         pairs, key=lambda pair: self.merges.get(pair, float("inf"))
                     )  # (75, 75)
-                    if (
-                        high_priority_pair not in self.merges
-                    ):  # no pairs is in the merges. We cannot merge further, quit;
+                    # no pairs is in the merges. We cannot merge further, quit;
+                    if high_priority_pair not in self.merges:
                         break
                     new_id = self.merges[
                         high_priority_pair
@@ -145,10 +149,11 @@ class Tokenizer:
                     ids = update(
                         ids, high_priority_pair, new_id
                     )  # merge (75, 75) into 297, ids = [39, 68, 297, 78]
-                result.extend(
-                    ids
-                )  # after multiple merges, ids = [15496], this the final encoding for the pretoken 'Hello'
-            return result  # [15496, 11, 703, 389, 345, 30]. 15496 is Hello's final encoding
+                # after multiple merges, ids = [15496], this the final encoding
+                # for the pretoken 'Hello'
+                result.extend(ids)
+            # [15496, 11, 703, 389, 345, 30]. 15496 is Hello's final encoding
+            return result
 
     def encode(self, text: str, progress_bar: bool = False) -> List[int]:
         """
@@ -185,5 +190,6 @@ class Tokenizer:
         Decode the token ids into the original text.
         """
         text_bytes = b"".join([self.vocab["int_to_byte"][i] for i in ids])
-        # errors='replace' will automatically replace malformed data with the replacement marker.
+        # errors='replace' will automatically replace malformed data with the
+        # replacement marker.
         return text_bytes.decode("utf-8", errors="replace")

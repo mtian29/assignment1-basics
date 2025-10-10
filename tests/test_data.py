@@ -13,7 +13,8 @@ def test_get_batch():
     batch_size = 32
     device = "cpu"
 
-    # Sanity check to make sure that the random samples are indeed somewhat random.
+    # Sanity check to make sure that the random samples are indeed somewhat
+    # random.
     starting_indices = Counter()
     num_iters = 1000
     for _ in range(num_iters):

@@ -24,9 +24,11 @@ class Linear(nn.Module):
         self.out_features = out_features
         self.device = device
         self.dtype = dtype
-        # construct and store your parameter as W (not W ⊤) for memory ordering reasons, putting it in an nn.Parameter
+        # construct and store your parameter as W (not W ⊤) for memory ordering
+        # reasons, putting it in an nn.Parameter
         self.weight = nn.Parameter(torch.randn(out_features, in_features))
-        # For initializations, use the settings from above along with torch.nn.init.trunc_normal_ to initialize the weights
+        # For initializations, use the settings from above along with
+        # torch.nn.init.trunc_normal_ to initialize the weights
         torch.nn.init.trunc_normal_(self.weight, std=0.02)
 
     def forward(

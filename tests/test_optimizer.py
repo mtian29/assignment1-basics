@@ -38,7 +38,8 @@ def test_adamw(numpy_snapshot):
     pytorch_weights = _optimize(torch.optim.AdamW)
     actual_weights = _optimize(get_adamw_cls())
 
-    # Might need to exit early if the weights match pytorch, since that should also be valid
+    # Might need to exit early if the weights match pytorch, since that should
+    # also be valid
     matches_pytorch = torch.allclose(actual_weights, pytorch_weights, atol=1e-4)
     if matches_pytorch:
         return

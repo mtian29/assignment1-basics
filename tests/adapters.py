@@ -3,6 +3,13 @@
 # flake8: noqa
 
 from __future__ import annotations
+from cs336_basics.embedding import Embedding
+import torch.nn as nn
+from cs336_basics.linear import Linear
+from .utils import GPT2_PRETOKENIZER_PATTERN
+from .tokenizer import Tokenizer
+import concurrent.futures
+from collections import Counter
 
 import os
 import pathlib
@@ -22,13 +29,6 @@ import logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
-from collections import Counter
-import concurrent.futures
-from .tokenizer import Tokenizer
-from .utils import GPT2_PRETOKENIZER_PATTERN
-from cs336_basics.linear import Linear
-import torch.nn as nn
-from cs336_basics.embedding import Embedding
 
 
 def run_linear(
@@ -324,7 +324,7 @@ def run_transformer_lm(
         num_heads (int): Number of heads to use in multi-headed attention. `d_model` must be
             evenly divisible by `num_heads`.
         d_ff (int): Dimensionality of the feed-forward inner layer (section 3.3).
-        rope_theta (float): The RoPE $\Theta$ parameter.
+        rope_theta (float): The RoPE $\\Theta$ parameter.
         weights (dict[str, Tensor]):
             State dict of our reference implementation. {num_layers} refers to an
             integer between `0` and `num_layers - 1` (the layer index).
@@ -632,10 +632,12 @@ def _read_text_file(input_path: str, num_worker: int, special_tokens: Iterable[s
         with concurrent.futures.ProcessPoolExecutor(max_workers=num_worker) as executor:
             pretokens = executor.map(_find_pretokens, text_chunks)
         pretokens = sum(pretokens, Counter())
-    # convert pretoken to tuple of bytes e.g. 'iron' -> (b'i', b'r', b'o', b'n')
-    gen_tuple_of_bytes = lambda pretoken: tuple(
-        [bytes([b]) for b in pretoken.encode("utf-8")]
-    )
+    # convert pretoken to tuple of bytes e.g. 'iron' -> (b'i', b'r', b'o',
+    # b'n')
+
+    def gen_tuple_of_bytes(pretoken):
+        return tuple([bytes([b]) for b in pretoken.encode("utf-8")])
+
     pretoken_freq = {}
     for pretoken, freq in pretokens.items():
         pretoken_freq[gen_tuple_of_bytes(pretoken)] = freq
@@ -656,7 +658,8 @@ def _update_byte_tuple(byte_tuple: Iterable[bytes], merge_loc: int):
     tomerge = byte_tuple[merge_loc : merge_loc + 2]  # (b' ', b't')
     suffix = byte_tuple[merge_loc + 2 :]  # (b'h', b'e')
     new_byte_tuple = prefix + (b"".join(tomerge),) + suffix  # (b' t', b'h', b'e')
-    return new_byte_tuple, prefix, suffix  # (b' t', b'h', b'e'), (), (b'h', b'e')
+    # (b' t', b'h', b'e'), (), (b'h', b'e')
+    return new_byte_tuple, prefix, suffix
 
 
 def run_train_bpe(
@@ -776,11 +779,14 @@ def run_train_bpe(
                     pretoken_tuple, prefix, suffix = _update_byte_tuple(
                         pretoken_tuple, i
                     )
-                    # pretoken_tuple = (b' t', b'h', b'e') <-- this is the new merged tuple, prefix = (), suffix = (b'h', b'e')
+                    # pretoken_tuple = (b' t', b'h', b'e') <-- this is the new
+                    # merged tuple, prefix = (), suffix = (b'h', b'e')
 
                     # Update the pair frequency table; https://github.com/marta1994/efficient_bpe_explanation
                     # for the new merged ' t'; we form new pairs with the prefix and suffix (add_pair)
-                    # update the pair frequency table for the new pairs (add_pair (b' t', b'h')) and delete the old pair (del_pair)  (b't', b'h')
+                    # update the pair frequency table for the new pairs
+                    # (add_pair (b' t', b'h')) and delete the old pair
+                    # (del_pair)  (b't', b'h')
                     if prefix:
                         add_pair = (prefix[-1], vocab[new_id])
                         pair_freq[add_pair] = pair_freq.get(add_pair, 0) + freq
@@ -795,12 +801,13 @@ def run_train_bpe(
                             most_freq_pair[1],
                             suffix[0],
                         )  # (b't', b'h'), this pair is deleted;
-                        pair_freq[
-                            del_pair
-                        ] -= freq  # cannot set it to 0, should minus the frequency; because ' th' is gone but 'xth' is still there
+                        # cannot set it to 0, should minus the frequency;
+                        # because ' th' is gone but 'xth' is still there
+                        pair_freq[del_pair] -= freq
                     pair_freq[most_freq_pair] -= freq
                 i += 1
-            # Update the pre-token frequency table; pretoken_tuple = (b' t', b'h', b'e')
+            # Update the pre-token frequency table; pretoken_tuple = (b' t',
+            # b'h', b'e')
             new_pretoken_freq[pretoken_tuple] = freq
         pretoken_freq = new_pretoken_freq
         (
