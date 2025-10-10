@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 from cs336_basics.embedding import Embedding
+from cs336_basics.rmsnorm import RmsNorm
 import torch.nn as nn
 from cs336_basics.linear import Linear
 from .utils import GPT2_PRETOKENIZER_PATTERN
@@ -402,7 +403,9 @@ def run_rmsnorm(
         Float[Tensor,"... d_model"]: Tensor of with the same shape as `in_features` with the output of running
         RMSNorm of the `in_features`.
     """
-    raise NotImplementedError
+    rmsnorm = RmsNorm(d_model)
+    rmsnorm.weight = nn.Parameter(weights)
+    return rmsnorm(in_features)
 
 
 def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:

@@ -1,10 +1,8 @@
 import torch
 import torch.nn as nn
 
-# noqa: E501
 
-
-class rmsnorm(nn.Module):
+class RmsNorm(nn.Module):
     """
     Construct the RMSNorm module.
 
@@ -37,5 +35,5 @@ class rmsnorm(nn.Module):
         in_dtype = x.dtype
         x = x.to(torch.float32)
         rms = torch.sqrt(torch.mean(x**2, dim=-1, keepdim=True) + self.eps)
-        x = x / rms
+        x = x * self.weight / rms
         return x.to(in_dtype)
