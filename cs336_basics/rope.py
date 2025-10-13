@@ -20,7 +20,7 @@ class RotaryPositionalEmbedding(nn.Module):
 
     Args:
         theta: Base frequency parameter (typically 10000.0)
-        d_k: Dimension of query/key vectors (must be even)
+        d_k: Dimension of query/key vectors (must be even), d_model
         max_seq_len: Maximum sequence length for precomputing rotations
         device: Device to store cached tensors on
     """
@@ -97,6 +97,8 @@ class RotaryPositionalEmbedding(nn.Module):
         You should use the token positions to slice your (possibly precomputed) cos and sin tensors
         along the sequence dimension.
 
+        Rotate every token's embedding in the pair. 
+
         Apply rotary positional embedding to input tensor.
 
         The core RoPE formula for each dimension pair (x₁, x₂) at position m is:
@@ -118,6 +120,7 @@ class RotaryPositionalEmbedding(nn.Module):
 
         Returns:
             Rotated tensor of same shape as input
+            
         """
 
         # Step 1: Extract cos/sin values for the specific positions in this sequence
