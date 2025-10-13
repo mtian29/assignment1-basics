@@ -97,7 +97,7 @@ class RotaryPositionalEmbedding(nn.Module):
         You should use the token positions to slice your (possibly precomputed) cos and sin tensors
         along the sequence dimension.
 
-        Rotate every token's embedding in the pair. 
+        Rotate every token's embedding in the pair.
 
         Apply rotary positional embedding to input tensor.
 
@@ -120,7 +120,7 @@ class RotaryPositionalEmbedding(nn.Module):
 
         Returns:
             Rotated tensor of same shape as input
-            
+
         """
 
         # Step 1: Extract cos/sin values for the specific positions in this sequence
