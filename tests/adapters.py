@@ -8,6 +8,7 @@ from cs336_basics.rmsnorm import RmsNorm
 import torch.nn as nn
 from cs336_basics.linear import Linear
 from cs336_basics.positionwise_feedforward import PositionwiseFeedForward
+from cs336_basics.rope import RotaryPositionalEmbedding
 from .utils import GPT2_PRETOKENIZER_PATTERN
 from .tokenizer import Tokenizer
 import concurrent.futures
@@ -231,7 +232,8 @@ def run_rope(
     Returns:
         Float[Tensor, " ... sequence_length d_k"]: Tensor with RoPEd input.
     """
-    raise NotImplementedError
+    rope = RotaryPositionalEmbedding(theta, d_k, max_seq_len)
+    return rope(in_query_or_key, token_positions)
 
 
 def run_transformer_block(
