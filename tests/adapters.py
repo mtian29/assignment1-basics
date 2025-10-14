@@ -9,6 +9,7 @@ import torch.nn as nn
 from cs336_basics.linear import Linear
 from cs336_basics.positionwise_feedforward import PositionwiseFeedForward
 from cs336_basics.rope import RotaryPositionalEmbedding
+from einops import repeat
 from .utils import GPT2_PRETOKENIZER_PATTERN
 from .tokenizer import Tokenizer
 import concurrent.futures
@@ -16,6 +17,7 @@ from collections import Counter
 from cs336_basics.softmax import softmax
 from cs336_basics.scaled_dot_product_attention import scaled_dot_product_attention
 from cs336_basics.multihead_self_attention import MultiheadSelfAttention
+from cs336_basics.transformer_block import TransformerBlock
 
 import os
 import pathlib
@@ -321,7 +323,33 @@ def run_transformer_block(
         Float[Tensor, "batch sequence_length d_model"] Tensor with the output of
         running the Transformer block on the input features while using RoPE.
     """
-    raise NotImplementedError
+    rope = RotaryPositionalEmbedding(theta, d_model // num_heads, max_seq_len)
+
+    transformer_block = TransformerBlock(d_model, num_heads, d_ff, rope=rope)
+    transformer_block.attention.weightQ.weight.data = weights["attn.q_proj.weight"]
+    transformer_block.attention.weightK.weight.data = weights["attn.k_proj.weight"]
+    transformer_block.attention.weightV.weight.data = weights["attn.v_proj.weight"]
+    transformer_block.attention.weightO.weight.data = weights["attn.output_proj.weight"]
+    transformer_block.norm1.weight.data = weights["ln1.weight"]
+    transformer_block.norm2.weight.data = weights["ln2.weight"]
+    transformer_block.feedforward.w1.weight.data = weights["ffn.w1.weight"]
+    transformer_block.feedforward.w2.weight.data = weights["ffn.w2.weight"]
+    transformer_block.feedforward.w3.weight.data = weights["ffn.w3.weight"]
+
+    token_positions = repeat(
+        torch.arange(in_features.shape[1]),
+        "seq -> batch seq",
+        batch=in_features.shape[0],
+    )
+    # print(token_positions)
+    # # tensor([[ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11],
+    # #         [ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11],
+    # #         [ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11],
+    # #         [ 0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11]])
+    # print(token_positions.shape) #torch.Size([4, 12])
+    # print(in_features.shape) # torch.Size([4, 12, 64])
+
+    return transformer_block(in_features, token_positions)
 
 
 def run_transformer_lm(
