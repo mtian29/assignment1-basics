@@ -15,6 +15,7 @@ import concurrent.futures
 from collections import Counter
 from cs336_basics.softmax import softmax
 from cs336_basics.scaled_dot_product_attention import scaled_dot_product_attention
+from cs336_basics.multihead_self_attention import MultiheadSelfAttention
 
 import os
 import pathlib
@@ -172,7 +173,12 @@ def run_multihead_self_attention(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    multihead_self_attention = MultiheadSelfAttention(d_model, num_heads)
+    multihead_self_attention.weightQ.weight.data = q_proj_weight
+    multihead_self_attention.weightK.weight.data = k_proj_weight
+    multihead_self_attention.weightV.weight.data = v_proj_weight
+    multihead_self_attention.weightO.weight.data = o_proj_weight
+    return multihead_self_attention(in_features)
 
 
 def run_multihead_self_attention_with_rope(
@@ -212,7 +218,14 @@ def run_multihead_self_attention_with_rope(
         Float[Tensor, " ... sequence_length d_out"]: Tensor with the output of running your optimized, batched multi-headed attention
         implementation with the given QKV projection weights and input features.
     """
-    raise NotImplementedError
+    rope = RotaryPositionalEmbedding(theta, d_model // num_heads, max_seq_len)
+    multihead_self_attention = MultiheadSelfAttention(d_model, num_heads, rope=rope)
+
+    multihead_self_attention.weightQ.weight.data = q_proj_weight
+    multihead_self_attention.weightK.weight.data = k_proj_weight
+    multihead_self_attention.weightV.weight.data = v_proj_weight
+    multihead_self_attention.weightO.weight.data = o_proj_weight
+    return multihead_self_attention(in_features, token_positions)
 
 
 def run_rope(
