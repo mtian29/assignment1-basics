@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from einops import rearrange, repeat
 
 
 class RotaryPositionalEmbedding(nn.Module):
@@ -70,23 +71,20 @@ class RotaryPositionalEmbedding(nn.Module):
         Returns:
             Rotated tensor with same shape as input
         """
-        orig_shape = u.shape
-        d_k = orig_shape[-1]
-
         # Reshape to group consecutive pairs: (..., d_k//2, 2)
         # This groups [x1,x2], [x3,x4], etc. into separate pairs
-        u = u.view(*orig_shape[:-1], d_k // 2, 2)
+        u_pairs = rearrange(u, "... (pairs two) -> ... pairs two", two=2)
 
         # Extract first and second elements of each pair
-        u1 = u[..., 0]  # [x1, x3, x5, ...] - shape (..., d_k//2)
-        u2 = u[..., 1]  # [x2, x4, x6, ...] - shape (..., d_k//2)
+        u1 = u_pairs[..., 0]  # [x1, x3, x5, ...] - shape (..., d_k//2)
+        u2 = u_pairs[..., 1]  # [x2, x4, x6, ...] - shape (..., d_k//2)
 
         # Apply 90° rotation: [x1, x2] → [-x2, x1]
         # Stack creates (..., d_k//2, 2) with pairs [-x2, x1], [-x4, x3], etc.
         u_rot = torch.stack((-u2, u1), dim=-1)
 
         # Reshape back to original dimensions
-        return u_rot.reshape(*orig_shape)
+        return rearrange(u_rot, "... pairs two -> ... (pairs two)")
 
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
         """
@@ -131,8 +129,12 @@ class RotaryPositionalEmbedding(nn.Module):
         # Step 2: Expand cos/sin to match input dimensions
         # Each cos/sin value applies to a pair of dimensions, so we repeat each value twice
         # [cos₁, cos₂, cos₃] → [cos₁, cos₁, cos₂, cos₂, cos₃, cos₃]
-        cos_cached_expanded = cos_cached.repeat_interleave(2, dim=-1)  # (seq_len, d_k)
-        sin_cached_expanded = sin_cached.repeat_interleave(2, dim=-1)  # (seq_len, d_k)
+        cos_cached_expanded = repeat(
+            cos_cached, "... pairs -> ... (pairs two)", two=2
+        )  # (..., seq_len, d_k)
+        sin_cached_expanded = repeat(
+            sin_cached, "... pairs -> ... (pairs two)", two=2
+        )  # (..., seq_len, d_k)
 
         # Step 3: Apply RoPE rotation formula
         # x' = x * cos + rotate_half(x) * sin
