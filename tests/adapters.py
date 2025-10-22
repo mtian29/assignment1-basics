@@ -21,6 +21,7 @@ from cs336_basics.transformer_block import TransformerBlock
 from cs336_basics.transformer_lm import TransformerLM
 from cs336_basics.cross_entropy import cross_entropy
 from cs336_basics.learning_rate_schedule import learning_rate_schedule
+from cs336_basics.gradient_clipping import gradient_clipping
 
 import os
 import pathlib
@@ -577,7 +578,7 @@ def run_gradient_clipping(
 
     The gradients of the parameters (parameter.grad) should be modified in-place.
     """
-    raise NotImplementedError
+    return gradient_clipping(parameters, max_l2_norm)
 
 
 def get_adamw_cls() -> Any:
